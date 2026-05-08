@@ -1,5 +1,7 @@
 # Expensplit
 A backend for expense-sharing application built usingGo and PostGreSQL
+This Project allows users to create groups, add shared expenses, split bills using multiple methods, and track balances and payments between friends and groups.
+The Project is created as a submission to DevScape Bootcamp.
 
 ## Features
 - User authentication and Profile
