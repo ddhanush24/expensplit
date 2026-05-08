@@ -18,6 +18,7 @@ func main() {
 		return
 	}
 	db := data.Conndb()
+	data.CreateTables(db)
 	h := &handle.Handler{DB: db}
 	mux := routes.SetupRoutes(h)
 	fmt.Println("Running on 8080")
