@@ -82,7 +82,7 @@ func (h *Handler) Createuser(w http.ResponseWriter, r *http.Request) {
 	dec.DisallowUnknownFields()
 	err := dec.Decode(&a_user)
 	if err != nil {
-		log.Println("Error in request", err.Error())
+		log.Println("Error in request", err.Error(), "here")
 		http.Error(w, "Missing Credentials", 401)
 		return
 	}
@@ -138,7 +138,7 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 	err := dec.Decode(&u)
 	if err != nil {
 		log.Println("Error in request")
-		http.Error(w, "Missing Credentials", 401)
+		http.Error(w, "Missing Credentials", 500)
 		return
 	}
 	if !(checkcredentials(&u)) {
@@ -360,9 +360,18 @@ func (h *Handler) FriendReqs(w http.ResponseWriter, r *http.Request) {
 		Pendingreq []string `json:"pendingrequests"`
 	}
 	var f freqlist
-
+	query1 := "SELECT u.name FROM friends f JOIN users u ON u.id=f.user_id2 WHERE f.user_id1=$1 AND accepted=false"
+	query2 := "SELECT u.name FROM friends f JOIN users u ON u.id=f.user_id1 WHERE f.user_id2=$1 AND accepted=false"
+	qpar := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("filter")))
+	if qpar == "sent" {
+		query1 = query1 + " AND requestedby=$1"
+		query2 = query2 + " AND requestedby=$1"
+	} else {
+		query1 = query1 + " AND requestedby!=$1"
+		query2 = query2 + " AND requestedby!=$1"
+	}
 	rows1, err := h.DB.QueryContext(r.Context(),
-		"SELECT u.name FROM friends f JOIN users u ON u.id=f.user_id2 WHERE f.user_id1=$1 ", uid)
+		query1, uid)
 	if err != nil {
 		http.Error(w, "Internal Server Error", 500)
 		return
@@ -381,7 +390,7 @@ func (h *Handler) FriendReqs(w http.ResponseWriter, r *http.Request) {
 
 	}
 	rows2, err := h.DB.QueryContext(r.Context(),
-		"SELECT u.name FROM friends f JOIN users u ON u.id=f.user_id1 WHERE f.user_id2=$1 ", uid)
+		query2, uid)
 	if err != nil {
 		http.Error(w, "Internal Server Error", 500)
 		return
@@ -526,26 +535,46 @@ func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 	err = tx.QueryRowContext(r.Context(),
 		"SELECT id from users where username = $1", e.Paid).Scan(&paid_id)
 	if err != nil {
-		log.Println("Error ")
-		http.Error(w, err.Error(), 500)
+		log.Println("Error here ")
+		http.Error(w, "User does not Exist", 500)
 		return
 	}
 	var uid int
 	err = tx.QueryRowContext(r.Context(),
 		"SELECT id from users where username = $1", username).Scan(&uid)
 	if err != nil {
-		log.Println("Error ")
-		http.Error(w, err.Error(), 500)
+		log.Println("Error there ")
+		http.Error(w, "User does not Exist", 500)
 		return
 	}
+	parseSQLArray := func(s string) []int {
+		s = strings.Trim(s, "{}")
+		if s == "" {
+			return []int{}
+		}
+		parts := strings.Split(s, ",")
+		var res []int
+		for _, p := range parts {
+			id, _ := strconv.Atoi(strings.TrimSpace(p))
+			res = append(res, id)
+		}
+		return res
+	}
+	//var check1 []int32
+	var mem string
 	var check []int
 	err = tx.QueryRowContext(r.Context(),
-		"SELECT members from groups where name=$1", e.GroupName).Scan(&check)
+		"SELECT members from groups where name=$1", e.GroupName).Scan(&mem)
 	if err != nil {
-		log.Println("Check if is in group")
+		log.Println("Check if is in group", err.Error())
 		http.Error(w, "Internal Server error", http.StatusInternalServerError)
 		return
+	} else {
+		check = parseSQLArray(mem)
 	}
+	// for _, id := range check1 {
+	// 	check = append(check, int(id))
+	// }
 	authorised, payerauth := false, false
 	for _, id := range check {
 		if id == uid {
@@ -600,7 +629,7 @@ func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 
 	// SPlit logic
 
-	if e.Splitop == 1 { // which is ratio
+	if e.Splitop == 1 { // which is ratio & percentage
 		var sum float64
 		for _, ratio := range e.Split {
 			if ratio < 0 {
@@ -617,7 +646,7 @@ func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 			e.Split[i] = (ratio / sum) * e.Totalamt
 			fmt.Println(e.Split[i], e.Splitord[i])
 		}
-	} else {
+	} else { //Amount based Split & Equal SPlt
 		var sum float64
 		for _, amt := range e.Split {
 			if amt < 0 {
@@ -894,19 +923,20 @@ func (h *Handler) EditExpense(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 
-		err = tx.Commit()
-		if err != nil {
-			http.Error(w, "Internal Server Error", 500)
-			return
-		}
-
-		//
-		w.WriteHeader(http.StatusAccepted)
 		// json.NewEncoder(w).Encode(map[string]string{
 		// 	"expenseid": strconv.Itoa(id),
 		//})
 
 	}
+	err = tx.Commit()
+	if err != nil {
+		http.Error(w, "Internal Server Error", 500)
+		return
+	}
+	log.Println(query)
+
+	//
+	w.WriteHeader(http.StatusAccepted)
 }
 
 func (h *Handler) Paid(w http.ResponseWriter, r *http.Request) {
@@ -1121,7 +1151,7 @@ func (h *Handler) FetchExpenses(w http.ResponseWriter, r *http.Request) {
 	switch mode {
 	case "borrowed":
 		query = query + "t.id1=$1"
-	case "Paid":
+	case "paid":
 		query = query + "t.id2=$1"
 	default:
 		query += "(t.id1=$1 OR t.id2=$1)"
@@ -1236,6 +1266,11 @@ func (h *Handler) Creategroup(w http.ResponseWriter, r *http.Request) {
 
 		}
 	}
+	err = tx.Commit()
+	if err != nil {
+		http.Error(w, "Unable to commit", 500)
+		return
+	}
 	json.NewEncoder(w).Encode(map[string]string{
 		"group_id": strconv.Itoa(g_id),
 	})
@@ -1320,6 +1355,7 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 		}
 		t.GroupView[gname].Owefrom[name] += amt
 	}
+
 	if r.URL.Query().Get("view") != "raw" {
 		for person, amt := range t.Individual.Owefrom {
 			if t.Individual.Oweto[person] > amt {
