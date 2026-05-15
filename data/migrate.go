@@ -43,7 +43,7 @@ func CreateTables(db *sql.DB) {
 		name TEXT NOT NULL UNIQUE,
 		created_by int,
 		cr_date DATE,
-		members []INT DEFAULT '{}',
+		members INT[] DEFAULT '{}',
 		FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE CASCADE
 	);`) //Memebers next change to sep tble
 	if err != nil {
@@ -80,5 +80,6 @@ func CreateTables(db *sql.DB) {
 	if err != nil {
 		log.Fatal("Failed to create tables:", err)
 	}
+	log.Println("Created all Tables")
 
 }
