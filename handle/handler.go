@@ -1,6 +1,7 @@
 package handle
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -75,7 +76,28 @@ func Verifyjwtoken(r *http.Request) (*jwt.Token, string, error) { // shd i retur
 	return token, username, nil
 }
 
+// MiddleWare
+func (h *Handler) Middleware(handlerfunction func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+
+		//AUTH PART --------------
+		_, username, err := Verifyjwtoken(r) // request contains the token in headers
+		if err != nil {
+			log.Println(err.Error())
+			http.Error(w, "Wrong Token", http.StatusBadRequest)
+			return
+		}
+		//fmt.Println("Inside Middleware")
+
+		ctx := context.WithValue(r.Context(), "username", username)
+		r = r.WithContext(ctx)
+		handlerfunction(w, r)
+
+	}
+}
+
 // Handlers
+
 func (h *Handler) Createuser(w http.ResponseWriter, r *http.Request) {
 	var a_user User
 	dec := json.NewDecoder(r.Body)
@@ -171,12 +193,8 @@ func (h *Handler) Signin(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) UserProfile(w http.ResponseWriter, r *http.Request) {
 	//var u User
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		log.Println(err.Error())
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
+	// log.Println(username.(string))
 
 	var rs struct {
 		Name     string `json:"Name"`
@@ -189,8 +207,13 @@ func (h *Handler) UserProfile(w http.ResponseWriter, r *http.Request) {
 	//var rs res
 	//json.NewDecoder(r.Body).Decode(&u)
 	var dat time.Time
-	rs.Username = username
-	err = h.DB.QueryRowContext(r.Context(),
+	var ok bool
+	rs.Username, ok = username.(string)
+	if ok != true {
+		http.Error(w, "Username Error", 500)
+		log.Println("Username parse Error")
+	}
+	err := h.DB.QueryRowContext(r.Context(),
 		"SELECT name,email,ph_no,cr_date,grps from users where username=$1", rs.Username).Scan(&rs.Name, &rs.Email, &rs.Ph_no, &dat, &rs.Grps)
 	if err != nil {
 		log.Println("Details of", rs.Username, "missing", err.Error())
@@ -205,18 +228,13 @@ func (h *Handler) UserProfile(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) Findfrnd(w http.ResponseWriter, r *http.Request) { // Requires lot of changes. Sqitch to friends table for easier access
 	//var u User
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
-
+	username := r.Context().Value("username")
 	type res struct {
 		Friends []string `json:"friendlst"`
 	}
 	var r1 res
 	var user_id int
-	err = h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&user_id)
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&user_id)
 	if err != nil {
 		http.Error(w, "Internal Server Error", 500)
 		return
@@ -263,12 +281,7 @@ func (h *Handler) Findfrnd(w http.ResponseWriter, r *http.Request) { // Requires
 
 func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) { //For both Initiating frnd req and accepting tht
 	//var u User
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		log.Println(err.Error(), username)
-		return
-	}
+	username := r.Context().Value("username")
 
 	type res struct {
 		Friend_username string `json:"friendname"`
@@ -277,7 +290,7 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) { //For both
 	var r1 res
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&r1)
+	err := dec.Decode(&r1)
 	if err != nil {
 		http.Error(w, "Missing JSON", http.StatusBadRequest)
 		return
@@ -341,15 +354,10 @@ func (h *Handler) AddFriend(w http.ResponseWriter, r *http.Request) { //For both
 }
 
 func (h *Handler) FriendReqs(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		log.Println(err.Error(), username)
-		return
-	}
+	username := r.Context().Value("username")
 
 	var uid int
-	err = h.DB.QueryRowContext(r.Context(),
+	err := h.DB.QueryRowContext(r.Context(),
 		"SELECT id from users where username = $1", username).Scan(&uid)
 	if err != nil {
 		log.Println("Error ")
@@ -418,12 +426,7 @@ func (h *Handler) FriendReqs(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		log.Println(err.Error(), username)
-		return
-	}
+	username := r.Context().Value("username")
 	type remove struct {
 		FndId int `json:"friendrequestid"`
 	}
@@ -434,7 +437,7 @@ func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 	var resp1 resp
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&reqf)
+	err := dec.Decode(&reqf)
 	if err != nil {
 		http.Error(w, "Bad Request", 400)
 		return
@@ -477,11 +480,7 @@ func (h *Handler) RemoveFriend(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 	//var u User]
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 
 	type exp struct {
 		Name        string    `json:"expense_name"`
@@ -498,7 +497,7 @@ func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 	var id, paid_id, group_id int
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&e)
+	err := dec.Decode(&e)
 	if err != nil {
 		log.Println("Error in JSON", err.Error())
 		http.Error(w, "Missing JSON", http.StatusBadRequest)
@@ -706,12 +705,7 @@ func (h *Handler) AddExpense(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) EditExpense(w http.ResponseWriter, r *http.Request) {
 	//var u User]
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
-
+	username := r.Context().Value("username")
 	type exp struct {
 		ExpenseID   int        `json:"expense_Id"`
 		Name        *string    `json:"expense_name"`
@@ -728,7 +722,7 @@ func (h *Handler) EditExpense(w http.ResponseWriter, r *http.Request) {
 	var group_id int
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&e)
+	err := dec.Decode(&e)
 	if err != nil {
 		log.Println("Error in JSON", err.Error())
 		http.Error(w, "Missing JSON", http.StatusBadRequest)
@@ -940,11 +934,7 @@ func (h *Handler) EditExpense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Paid(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 	type payment struct {
 		TransactionID int `json:"transactionid"`
 		//ExpenseID     int     `json:"expenseid"`
@@ -954,7 +944,7 @@ func (h *Handler) Paid(w http.ResponseWriter, r *http.Request) {
 	var p payment
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&p)
+	err := dec.Decode(&p)
 	if err != nil {
 		http.Error(w, "Misisng JSON", 400)
 		return
@@ -1037,18 +1027,14 @@ func (h *Handler) Paid(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) DeleteExpense(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 	type expense struct {
 		ExpID int `json:"expense_id"`
 	}
 	var e expense
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&e)
+	err := dec.Decode(&e)
 	if err != nil {
 		http.Error(w, "Misisng JSON", 400)
 		return
@@ -1119,11 +1105,7 @@ func (h *Handler) DeleteExpense(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) FetchExpenses(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 	type resp struct {
 		ExpenseID     int     `json:"expenseid"`
 		TransactionID int     `json:"transactionid"`
@@ -1137,7 +1119,7 @@ func (h *Handler) FetchExpenses(w http.ResponseWriter, r *http.Request) {
 	}
 	var r1 []resp
 	var uid int
-	err = h.DB.QueryRowContext(r.Context(),
+	err := h.DB.QueryRowContext(r.Context(),
 		"SELECT id from users where username = $1", username).Scan(&uid)
 	if err != nil {
 		log.Println("Error ")
@@ -1193,12 +1175,13 @@ func (h *Handler) FetchExpenses(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Creategroup(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
+	username1 := r.Context().Value("username")
+	var ok bool
+	username, ok := username1.(string)
+	if ok == false {
+		http.Error(w, "Invalid Username", http.StatusUnauthorized)
+		log.Println("Username not valid")
 	}
-
 	type group struct {
 		Name    string   `json:"group_name"`
 		Members []string `json:"member_usernames"`
@@ -1208,7 +1191,7 @@ func (h *Handler) Creategroup(w http.ResponseWriter, r *http.Request) {
 	var m_ids []int
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	err = dec.Decode(&g1)
+	err := dec.Decode(&g1)
 	if err != nil {
 		http.Error(w, "Missing JSON", http.StatusBadRequest)
 		return
@@ -1277,13 +1260,9 @@ func (h *Handler) Creategroup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 	var uid int
-	err = h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&uid)
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&uid)
 	if err != nil {
 		log.Println(err.Error())
 		http.Error(w, err.Error(), 500)
@@ -1397,13 +1376,9 @@ func (h *Handler) Dashboard(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) Deleteuser(w http.ResponseWriter, r *http.Request) {
 	//var u User
 
-	_, username, err := Verifyjwtoken(r) // request contains the token in headers
-	if err != nil {
-		http.Error(w, "Wrong Token", http.StatusBadRequest)
-		return
-	}
+	username := r.Context().Value("username")
 	var uid int
-	err = h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&uid)
+	err := h.DB.QueryRowContext(r.Context(), "SELECT id from users where username=$1", username).Scan(&uid)
 	if err != nil {
 		log.Println(err.Error())
 		http.Error(w, err.Error(), 500)

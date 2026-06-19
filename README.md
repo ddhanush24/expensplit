@@ -24,7 +24,7 @@ The Project is created as a submission to DevScape Bootcamp.
 
 ### Instructions
 1. Clone the repo
-run ` git clone github.com/ddhanush24/expensplit.git`
+run ` git clone https://github.com/ddhanush24/expensplit.git`
 run`cd expensplit`
 
 2. Install the dependencies 
@@ -89,6 +89,7 @@ Server will run at `http://localhost:8080`
 | PATCH|`/xpense`  |Edit Created expense |
 | DELETE|`/xpense`  |Remove or Delete Expense* |
 |POST|`/payments`  |Register aPayment|
+ 
 <sub>*Deletes expense only if has not been paid even partially, to maintain payment integrity</sub>
 
 ### Groups
@@ -138,5 +139,8 @@ Rohit = 65%
 
 ```
 
+## Additional Info
+
 Demo Link https://drive.google.com/file/d/1wCs_LENGTTviHLvIj7NTktBPRNmylQGY/view?usp=sharing
-Code Walkthrough Link https://drive.google.com/file/d/1zcomSW7V-tLSpkOJiQi3WRauy2YpgdRh/view?usp=sharing**
+
+Code Walkthrough Link https://drive.google.com/file/d/1zcomSW7V-tLSpkOJiQi3WRauy2YpgdRh/view?usp=sharing
